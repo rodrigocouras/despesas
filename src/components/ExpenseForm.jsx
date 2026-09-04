@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { supabase } from "../supabaseClient";
 
@@ -14,11 +15,16 @@ function ExpenseForm({ onAddExpense }) {
       return;
     }
 
-    const novaDespesa = {
-      descricao,
-      valor: parseFloat(valor),
-      categoria,
-    };
+  const {
+  data: { user },
+} = await supabase.auth.getUser();
+
+const novaDespesa = {
+  descricao,
+  valor: parseFloat(valor),
+  categoria,
+  user_id: user.id,
+};
 
     const { data, error } = await supabase
       .from("despesas")
@@ -39,39 +45,57 @@ function ExpenseForm({ onAddExpense }) {
   };
 
   return (
-    <form onSubmit={handleSubmit}>
-      <h2>Adicionar Despesa</h2>
+    <form className="expense-form" onSubmit={handleSubmit}>
 
-      <input
-        type="text"
-        placeholder="Descrição"
-        value={descricao}
-        onChange={(e) => setDescricao(e.target.value)}
-      />
+      <div className="form-group">
+        <label>Descrição</label>
 
-      <input
-        type="number"
-        placeholder="Valor"
-        step="0.01"
-        value={valor}
-        onChange={(e) => setValor(e.target.value)}
-      />
+        <input
+          type="text"
+          placeholder="Ex.: Supermercado"
+          value={descricao}
+          onChange={(e) => setDescricao(e.target.value)}
+        />
+      </div>
 
-      <select
-        value={categoria}
-        onChange={(e) => setCategoria(e.target.value)}
-      >
-        <option value="">Seleciona uma categoria</option>
-        <option value="Combustível">⛽ Combustível</option>
-        <option value="Mercado">🛒 Mercado</option>
-        <option value="Saídas">🎉 Saídas</option>
-        <option value="Jantares">🍽️ Jantares</option>
-        <option value="Outros">📦 Outros</option>
-      </select>
+      <div className="form-group">
+        <label>Valor</label>
 
-      <button type="submit">
-        Adicionar despesa
+        <div className="input-with-symbol">
+          <input
+            type="number"
+            placeholder="0,00"
+            step="0.01"
+            min="0"
+            value={valor}
+            onChange={(e) => setValor(e.target.value)}
+          />
+
+          <span>€</span>
+        </div>
+      </div>
+
+      <div className="form-group">
+        <label>Categoria</label>
+
+        <select
+          value={categoria}
+          onChange={(e) => setCategoria(e.target.value)}
+        >
+          <option value="">Selecionar categoria</option>
+          <option value="Combustível">⛽ Combustível</option>
+          <option value="Mercado">🛒 Mercado</option>
+          <option value="Saídas">🎉 Saídas</option>
+          <option value="Jantares">🍽️ Jantares</option>
+          <option value="Outros">📦 Outros</option>
+        </select>
+      </div>
+
+      <button type="submit" className="form-button">
+        <span>+</span>
+        Adicionar
       </button>
+
     </form>
   );
 }

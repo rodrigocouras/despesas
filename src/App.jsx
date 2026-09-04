@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 import Dashboard from "./pages/Dashboard";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
 import "./App.css";
 
 function App() {
@@ -8,6 +10,8 @@ function App() {
   const [despesas, setDespesas] = useState([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [categoriaAtiva, setCategoriaAtiva] = useState("Todas");
+  const [session, setSession] = useState(null);
+  const [mostrarRegisto, setMostrarRegisto] = useState(false);
 
   const hoje = new Date();
 
@@ -22,6 +26,30 @@ function App() {
   // =========================
   // CARREGAR DESPESAS
   // =========================
+
+  useEffect(() => {
+  const obterSessao = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    setSession(session);
+  };
+
+  obterSessao();
+
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange(
+    (_event, session) => {
+      setSession(session);
+    }
+  );
+
+  return () => {
+    subscription.unsubscribe();
+  };
+}, []);
 
   useEffect(() => {
 
@@ -222,6 +250,17 @@ function App() {
     (a, b) => b - a
   );
 
+if (!session) {
+  return mostrarRegisto ? (
+    <Register
+      onLogin={() => setMostrarRegisto(false)}
+    />
+  ) : (
+    <Login
+      onRegister={() => setMostrarRegisto(true)}
+    />
+  );
+}
 
   return (
     <Dashboard

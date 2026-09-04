@@ -1,5 +1,5 @@
 import ExpenseForm from "../components/ExpenseForm";
-
+import { supabase } from "../supabaseClient";
 function Dashboard({
 
   despesasFiltradas,
@@ -17,6 +17,9 @@ function Dashboard({
   adicionarDespesa,
   eliminarDespesa,
 }) {
+  const terminarSessao = async () => {
+  await supabase.auth.signOut();
+};
   // Média diária
   const mediaDiaria =
     despesasFiltradas.length > 0
@@ -82,12 +85,21 @@ function Dashboard({
 
         <div className="sidebar-bottom">
 
-          <a href="#definicoes" className="nav-item">
-            <span>⚙</span>
-            Definições
-          </a>
+  <a href="#definicoes" className="nav-item">
+    <span>⚙</span>
+    Definições
+  </a>
 
-        </div>
+  <button
+    type="button"
+    className="nav-item logout-button"
+    onClick={terminarSessao}
+  >
+    <span>↪</span>
+    Terminar sessão
+  </button>
+
+</div>
 
       </aside>
 

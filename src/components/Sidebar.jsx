@@ -47,18 +47,16 @@ function Sidebar() {
         </a>
 
       </nav>
+<div className="sidebar-bottom">
 
-      <div className="sidebar-bottom">
+  <a href="#definicoes" className="nav-item">
+    <span>⚙</span>
+    Definições
+  </a>
 
-        <a
-          href="/definicoes"
-          className="nav-item"
-        >
-          <span>⚙</span>
-          Definições
-        </a>
 
-      </div>
+
+</div>
 
     </aside>
   );
