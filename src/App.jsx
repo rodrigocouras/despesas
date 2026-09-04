@@ -51,28 +51,28 @@ function App() {
   };
 }, []);
 
-  useEffect(() => {
+ useEffect(() => {
+  if (!session) return;
 
-    const carregarDespesas = async () => {
+  const carregarDespesas = async () => {
+    const { data, error } = await supabase
+      .from("despesas")
+      .select("*")
+      .eq("user_id", session.user.id)
+      .order("created_at", {
+        ascending: false,
+      });
 
-      const { data, error } = await supabase
-        .from("despesas")
-        .select("*")
-        .order("created_at", {
-          ascending: false,
-        });
+    if (error) {
+      console.error("Erro ao carregar despesas:", error);
+      return;
+    }
 
-      if (error) {
-        console.error(error);
-        return;
-      }
+    setDespesas(data || []);
+  };
 
-      setDespesas(data || []);
-    };
-
-    carregarDespesas();
-
-  }, [refreshKey]);
+  carregarDespesas();
+}, [session, refreshKey]);
 
 
   // =========================
