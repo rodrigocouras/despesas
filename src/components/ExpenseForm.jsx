@@ -1,5 +1,6 @@
 
 import { useState } from "react";
+import { categorias } from "../data/dashboardData";
 import { supabase } from "../supabaseClient";
 
 function ExpenseForm({ onAddExpense }) {
@@ -83,11 +84,13 @@ const novaDespesa = {
           onChange={(e) => setCategoria(e.target.value)}
         >
           <option value="">Selecionar categoria</option>
-          <option value="Combustível">⛽ Combustível</option>
-          <option value="Mercado">🛒 Mercado</option>
-          <option value="Saídas">🎉 Saídas</option>
-          <option value="Jantares">🍽️ Jantares</option>
-          <option value="Outros">📦 Outros</option>
+          {categorias
+            .filter((item) => item.nome !== "Todas")
+            .map((item) => (
+              <option key={item.nome} value={item.nome}>
+                {item.icone} {item.nome}
+              </option>
+            ))}
         </select>
       </div>
 

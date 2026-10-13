@@ -1,306 +1,249 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { categorias, meses } from "./data/dashboardData";
 import { supabase } from "./supabaseClient";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import "./App.css";
 
+const paginasDisponiveis = [
+  "dashboard",
+  "resumo",
+  "despesas",
+  "estatisticas",
+  "categorias",
+  "orcamentos",
+];
+
+const obterPaginaDoEndereco = () => {
+  const pagina = window.location.hash.slice(1);
+  return paginasDisponiveis.includes(pagina) ? pagina : "dashboard";
+};
+
+const obterTemaGuardado = () => {
+  try {
+    return window.localStorage.getItem("despesas:tema-escuro") === "true";
+  } catch {
+    return false;
+  }
+};
+
 function App() {
+  const hoje = new Date();
 
   const [despesas, setDespesas] = useState([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [categoriaAtiva, setCategoriaAtiva] = useState("Todas");
   const [session, setSession] = useState(null);
   const [mostrarRegisto, setMostrarRegisto] = useState(false);
-
-  const hoje = new Date();
-
-  const [mesSelecionado, setMesSelecionado] = useState(
-    hoje.getMonth()
-  );
-
-  const [anoSelecionado, setAnoSelecionado] = useState(
-    hoje.getFullYear()
-  );
-
-  // =========================
-  // CARREGAR DESPESAS
-  // =========================
+  const [temaEscuro, setTemaEscuro] = useState(obterTemaGuardado);
+  const [paginaAtiva, setPaginaAtiva] = useState(obterPaginaDoEndereco);
+  const [mesSelecionado, setMesSelecionado] = useState(hoje.getMonth());
+  const [anoSelecionado, setAnoSelecionado] = useState(hoje.getFullYear());
 
   useEffect(() => {
-  const obterSessao = async () => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+    const obterSessao = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-    setSession(session);
-  };
-
-  obterSessao();
-
-  const {
-    data: { subscription },
-  } = supabase.auth.onAuthStateChange(
-    (_event, session) => {
       setSession(session);
+    };
+
+    obterSessao();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    const atualizarPagina = () => {
+      setPaginaAtiva(obterPaginaDoEndereco());
+    };
+
+    window.addEventListener("hashchange", atualizarPagina);
+    return () => window.removeEventListener("hashchange", atualizarPagina);
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("despesas:tema-escuro", String(temaEscuro));
+    } catch {
+      // The selected theme remains active for this session if storage is unavailable.
     }
-  );
+  }, [temaEscuro]);
 
-  return () => {
-    subscription.unsubscribe();
-  };
-}, []);
+  const navegarParaPagina = (pagina) => {
+    if (!paginasDisponiveis.includes(pagina)) return;
 
- useEffect(() => {
-  if (!session) return;
+    setPaginaAtiva(pagina);
 
-  const carregarDespesas = async () => {
-    const { data, error } = await supabase
-      .from("despesas")
-      .select("*")
-      .eq("user_id", session.user.id)
-      .order("created_at", {
-        ascending: false,
-      });
-
-    if (error) {
-      console.error("Erro ao carregar despesas:", error);
-      return;
+    if (window.location.hash !== `#${pagina}`) {
+      window.location.hash = pagina;
     }
-
-    setDespesas(data || []);
   };
 
-  carregarDespesas();
-}, [session, refreshKey]);
+  useEffect(() => {
+    if (!session) return;
 
+    const carregarDespesas = async () => {
+      const { data, error } = await supabase
+        .from("despesas")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .order("created_at", { ascending: false });
 
-  // =========================
-  // ADICIONAR DESPESA
-  // =========================
+      if (error) {
+        console.error("Erro ao carregar despesas:", error);
+        return;
+      }
+
+      setDespesas(data || []);
+    };
+
+    carregarDespesas();
+  }, [session, refreshKey]);
 
   const adicionarDespesa = () => {
     setRefreshKey((prev) => prev + 1);
   };
 
-
-  // =========================
-  // ELIMINAR DESPESA
-  // =========================
-
   const eliminarDespesa = async (id) => {
-
     const confirmar = window.confirm(
       "Tens a certeza que queres eliminar esta despesa?"
     );
 
     if (!confirmar) return;
 
-    const { error } = await supabase
-      .from("despesas")
-      .delete()
-      .eq("id", id);
+    const { error } = await supabase.from("despesas").delete().eq("id", id);
 
     if (error) {
-      console.error(
-        "Erro ao eliminar despesa:",
-        error
-      );
+      console.error("Erro ao eliminar despesa:", error);
       return;
     }
 
     setRefreshKey((prev) => prev + 1);
   };
 
+  const despesasDoPeriodo = useMemo(
+    () =>
+      despesas.filter((despesa) => {
+        const data = new Date(despesa.created_at);
 
-  // =========================
-  // CATEGORIAS
-  // =========================
-
-  const categorias = [
-    {
-      nome: "Todas",
-      icone: "📋",
-    },
-    {
-      nome: "Combustível",
-      icone: "⛽",
-    },
-    {
-      nome: "Mercado",
-      icone: "🛒",
-    },
-    {
-      nome: "Saídas",
-      icone: "🎉",
-    },
-    {
-      nome: "Jantares",
-      icone: "🍽️",
-    },
-    {
-      nome: "Outros",
-      icone: "📦",
-    },
-  ];
-
-
-  // =========================
-  // MESES
-  // =========================
-
-  const meses = [
-    "Janeiro",
-    "Fevereiro",
-    "Março",
-    "Abril",
-    "Maio",
-    "Junho",
-    "Julho",
-    "Agosto",
-    "Setembro",
-    "Outubro",
-    "Novembro",
-    "Dezembro",
-  ];
-
-
-  // =========================
-  // FILTRO MÊS / ANO
-  // =========================
-
-  const despesasDoPeriodo = despesas.filter(
-    (d) => {
-
-      const data = new Date(
-        d.created_at
-      );
-
-      return (
-        data.getMonth() === mesSelecionado &&
-        data.getFullYear() === anoSelecionado
-      );
-    }
-  );
-
-
-  // =========================
-  // FILTRO CATEGORIA
-  // =========================
-
-  const despesasFiltradas =
-    categoriaAtiva === "Todas"
-      ? despesasDoPeriodo
-      : despesasDoPeriodo.filter(
-          (d) =>
-            (d.categoria || "Outros") ===
-            categoriaAtiva
+        return (
+          data.getMonth() === mesSelecionado &&
+          data.getFullYear() === anoSelecionado
         );
-
-
-  // =========================
-  // TOTAL
-  // =========================
-
-  const total = despesasDoPeriodo.reduce(
-    (acc, d) =>
-      acc + Number(d.valor),
-    0
+      }),
+    [despesas, mesSelecionado, anoSelecionado]
   );
 
+  const despesasFiltradas = useMemo(
+    () =>
+      categoriaAtiva === "Todas"
+        ? despesasDoPeriodo
+        : despesasDoPeriodo.filter(
+            (despesa) => (despesa.categoria || "Outros") === categoriaAtiva
+          ),
+    [categoriaAtiva, despesasDoPeriodo]
+  );
 
-  // =========================
-  // TOTAL CATEGORIA
-  // =========================
+  const total = useMemo(
+    () =>
+      despesasDoPeriodo.reduce(
+        (acumulador, despesa) => acumulador + Number(despesa.valor),
+        0
+      ),
+    [despesasDoPeriodo]
+  );
 
-  const totalCategoria =
-    despesasFiltradas.reduce(
-      (acc, d) =>
-        acc + Number(d.valor),
-      0
-    );
+  const totalCategoria = useMemo(
+    () =>
+      despesasFiltradas.reduce(
+        (acumulador, despesa) => acumulador + Number(despesa.valor),
+        0
+      ),
+    [despesasFiltradas]
+  );
 
+  const resumoMensal = useMemo(() => {
+    const mesesResumo = [];
+    const maxMeses = 6;
 
-  // =========================
-  // ANOS DISPONÍVEIS
-  // =========================
+    for (let indice = maxMeses - 1; indice >= 0; indice -= 1) {
+      const data = new Date(anoSelecionado, mesSelecionado - indice, 1);
+      const mes = data.getMonth();
+      const ano = data.getFullYear();
+
+      const totalMes = despesas.reduce((acumulador, despesa) => {
+        const dataDespesa = new Date(despesa.created_at);
+
+        if (dataDespesa.getMonth() === mes && dataDespesa.getFullYear() === ano) {
+          return acumulador + Number(despesa.valor);
+        }
+
+        return acumulador;
+      }, 0);
+
+      mesesResumo.push({
+        label: meses[mes].slice(0, 3),
+        total: totalMes,
+      });
+    }
+
+    return mesesResumo;
+  }, [anoSelecionado, despesas, mesSelecionado]);
 
   const anosDisponiveis = [
     ...new Set(
-      despesas.map(
-        (d) =>
-          new Date(
-            d.created_at
-          ).getFullYear()
-      )
+      despesas.map((despesa) => new Date(despesa.created_at).getFullYear())
     ),
   ];
 
-  if (
-    !anosDisponiveis.includes(
-      hoje.getFullYear()
-    )
-  ) {
-    anosDisponiveis.push(
-      hoje.getFullYear()
+  if (!anosDisponiveis.includes(hoje.getFullYear())) {
+    anosDisponiveis.push(hoje.getFullYear());
+  }
+
+  anosDisponiveis.sort((a, b) => b - a);
+
+  if (!session) {
+    return mostrarRegisto ? (
+      <Register onLogin={() => setMostrarRegisto(false)} />
+    ) : (
+      <Login onRegister={() => setMostrarRegisto(true)} />
     );
   }
 
-  anosDisponiveis.sort(
-    (a, b) => b - a
-  );
-
-if (!session) {
-  return mostrarRegisto ? (
-    <Register
-      onLogin={() => setMostrarRegisto(false)}
-    />
-  ) : (
-    <Login
-      onRegister={() => setMostrarRegisto(true)}
-    />
-  );
-}
-
   return (
     <Dashboard
-      despesas={despesas}
-      despesasFiltradas={
-        despesasFiltradas
-      }
+      userId={session.user.id}
+      despesasFiltradas={despesasFiltradas}
+      despesasDoPeriodo={despesasDoPeriodo}
       total={total}
-      totalCategoria={
-        totalCategoria
-      }
-      categoriaAtiva={
-        categoriaAtiva
-      }
-      setCategoriaAtiva={
-        setCategoriaAtiva
-      }
+      totalCategoria={totalCategoria}
+      categoriaAtiva={categoriaAtiva}
+      setCategoriaAtiva={setCategoriaAtiva}
       categorias={categorias}
       meses={meses}
-      mesSelecionado={
-        mesSelecionado
-      }
-      setMesSelecionado={
-        setMesSelecionado
-      }
-      anoSelecionado={
-        anoSelecionado
-      }
-      setAnoSelecionado={
-        setAnoSelecionado
-      }
-      anosDisponiveis={
-        anosDisponiveis
-      }
-      adicionarDespesa={
-        adicionarDespesa
-      }
-      eliminarDespesa={
-        eliminarDespesa
-      }
+      mesSelecionado={mesSelecionado}
+      setMesSelecionado={setMesSelecionado}
+      anoSelecionado={anoSelecionado}
+      setAnoSelecionado={setAnoSelecionado}
+      anosDisponiveis={anosDisponiveis}
+      adicionarDespesa={adicionarDespesa}
+      eliminarDespesa={eliminarDespesa}
+      temaEscuro={temaEscuro}
+      setTemaEscuro={setTemaEscuro}
+      resumoMensal={resumoMensal}
+      paginaAtiva={paginaAtiva}
+      setPaginaAtiva={navegarParaPagina}
     />
   );
 }
