@@ -28,4 +28,19 @@ export const meses = [
   "Dezembro",
 ];
 
+export const iconesEstacao = [
+  "❄️",
+  "❄️",
+  "🌸",
+  "🌸",
+  "🌸",
+  "☀️",
+  "☀️",
+  "☀️",
+  "🍂",
+  "🍂",
+  "🍂",
+  "❄️",
+];
+
 export const formatCurrency = (value) => `${Number(value || 0).toFixed(2)} €`;

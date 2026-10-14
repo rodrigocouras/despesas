@@ -1,0 +1,4 @@
+project_id = "xplimfyrnzelrxmrrbri"
+
+[functions.process-recurring-expenses]
+verify_jwt = false

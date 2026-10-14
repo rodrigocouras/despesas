@@ -11,108 +11,107 @@ function Register({ onLogin }) {
   const [aCarregar, setACarregar] = useState(false);
 
   const handleRegister = async (e) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  setErro("");
-  setSucesso("");
+    setErro("");
+    setSucesso("");
 
-  if (password !== confirmarPassword) {
-    setErro("As palavras-passe não coincidem.");
-    return;
-  }
+    if (password !== confirmarPassword) {
+      setErro("As palavras-passe não coincidem.");
+      return;
+    }
 
-  if (password.length < 6) {
-    setErro(
-      "A palavra-passe deve ter pelo menos 6 caracteres."
-    );
-    return;
-  }
+    if (password.length < 6) {
+      setErro("A palavra-passe deve ter pelo menos 6 caracteres.");
+      return;
+    }
 
-  setACarregar(true);
+    setACarregar(true);
 
-  const {  error } = await supabase.auth.signUp({
-    email,
-    password,
-  });
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
 
-  if (error) {
-    setErro(error.message);
-  } else {
-    setSucesso(
-      "Conta criada! Verifica o teu email para confirmares a conta."
-    );
-  }
+    if (error) {
+      setErro(error.message);
+    } else {
+      setSucesso(
+        "Conta criada! Verifica o teu email para confirmares a conta."
+      );
+    }
 
-  setACarregar(false);
-};
+    setACarregar(false);
+  };
+
   return (
     <div className="auth-page">
-      <div className="auth-card">
+      <div className="auth-background" aria-hidden="true">
+        <div className="auth-shape auth-shape-1"></div>
+        <div className="auth-shape auth-shape-2"></div>
+      </div>
 
-        <div className="auth-logo">
-          €
+      <div className="auth-card">
+        <div className="auth-brand">
+          <div className="auth-logo">€</div>
+          <span>Finanças</span>
         </div>
 
-        <h1>Criar conta</h1>
-
-        <p className="auth-subtitle">
-          Cria a tua conta para começares.
-        </p>
+        <div className="auth-header">
+          <h1>Criar conta</h1>
+          <p>Cria a tua conta para começares a controlar as tuas despesas.</p>
+        </div>
 
         <form onSubmit={handleRegister}>
-
           <div className="form-group">
-            <label>Email</label>
-
+            <label htmlFor="registo-email">Email</label>
             <input
+              id="registo-email"
               type="email"
               placeholder="exemplo@email.com"
               value={email}
-              onChange={(e) =>
-                setEmail(e.target.value)
-              }
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
               required
             />
           </div>
 
           <div className="form-group">
-            <label>Palavra-passe</label>
-
+            <label htmlFor="registo-password">Palavra-passe</label>
             <input
+              id="registo-password"
               type="password"
               placeholder="••••••••"
               value={password}
-              onChange={(e) =>
-                setPassword(e.target.value)
-              }
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
               required
             />
           </div>
 
           <div className="form-group">
-            <label>Confirmar palavra-passe</label>
-
+            <label htmlFor="registo-confirmar-password">
+              Confirmar palavra-passe
+            </label>
             <input
+              id="registo-confirmar-password"
               type="password"
               placeholder="••••••••"
               value={confirmarPassword}
-              onChange={(e) =>
-                setConfirmarPassword(
-                  e.target.value
-                )
-              }
+              onChange={(e) => setConfirmarPassword(e.target.value)}
+              autoComplete="new-password"
               required
             />
           </div>
 
           {erro && (
-            <div className="auth-error">
+            <div className="auth-error" role="alert">
               {erro}
             </div>
           )}
 
           {sucesso && (
-            <div className="auth-success">
+            <div className="auth-success" role="status">
               {sucesso}
             </div>
           )}
@@ -126,12 +125,14 @@ function Register({ onLogin }) {
               ? "A criar conta..."
               : "Criar conta"}
           </button>
-
         </form>
+
+        <div className="auth-divider">
+          <span>ou</span>
+        </div>
 
         <p className="auth-footer">
           Já tens uma conta?
-
           <button
             type="button"
             onClick={onLogin}
@@ -139,7 +140,6 @@ function Register({ onLogin }) {
             Entrar
           </button>
         </p>
-
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import { supabase } from "./supabaseClient";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import ResetPassword from "./pages/ResetPassword";
 import "./App.css";
 
 const paginasDisponiveis = [
@@ -13,6 +14,7 @@ const paginasDisponiveis = [
   "estatisticas",
   "categorias",
   "orcamentos",
+  "definicoes",
 ];
 
 const obterPaginaDoEndereco = () => {
@@ -36,6 +38,7 @@ function App() {
   const [categoriaAtiva, setCategoriaAtiva] = useState("Todas");
   const [session, setSession] = useState(null);
   const [mostrarRegisto, setMostrarRegisto] = useState(false);
+  const [aRedefinirPassword, setARedefinirPassword] = useState(false);
   const [temaEscuro, setTemaEscuro] = useState(obterTemaGuardado);
   const [paginaAtiva, setPaginaAtiva] = useState(obterPaginaDoEndereco);
   const [mesSelecionado, setMesSelecionado] = useState(hoje.getMonth());
@@ -54,8 +57,11 @@ function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
+      if (event === "PASSWORD_RECOVERY") {
+        setARedefinirPassword(true);
+      }
     });
 
     return () => {
@@ -111,7 +117,10 @@ function App() {
     carregarDespesas();
   }, [session, refreshKey]);
 
-  const adicionarDespesa = () => {
+  const adicionarDespesa = (despesa) => {
+    const dataDespesa = new Date(despesa.created_at);
+    setMesSelecionado(dataDespesa.getMonth());
+    setAnoSelecionado(dataDespesa.getFullYear());
     setRefreshKey((prev) => prev + 1);
   };
 
@@ -126,7 +135,25 @@ function App() {
 
     if (error) {
       console.error("Erro ao eliminar despesa:", error);
+      window.alert(`Não foi possível eliminar a despesa: ${error.message}`);
       return;
+    }
+
+    setRefreshKey((prev) => prev + 1);
+  };
+
+  const atualizarDespesa = async (id, alteracoes) => {
+    const { data, error } = await supabase
+      .from("despesas")
+      .update(alteracoes)
+      .eq("id", id)
+      .eq("user_id", session.user.id)
+      .select("id")
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) {
+      throw new Error("Despesa não encontrada ou sem permissão para a editar.");
     }
 
     setRefreshKey((prev) => prev + 1);
@@ -213,6 +240,15 @@ function App() {
 
   anosDisponiveis.sort((a, b) => b - a);
 
+  if (aRedefinirPassword) {
+    return (
+      <ResetPassword
+        onComplete={() => setARedefinirPassword(false)}
+        onBack={() => setARedefinirPassword(false)}
+      />
+    );
+  }
+
   if (!session) {
     return mostrarRegisto ? (
       <Register onLogin={() => setMostrarRegisto(false)} />
@@ -224,6 +260,9 @@ function App() {
   return (
     <Dashboard
       userId={session.user.id}
+      userEmail={session.user.email || ""}
+      userName={session.user.user_metadata?.full_name || ""}
+      despesas={despesas}
       despesasFiltradas={despesasFiltradas}
       despesasDoPeriodo={despesasDoPeriodo}
       total={total}
@@ -239,6 +278,7 @@ function App() {
       anosDisponiveis={anosDisponiveis}
       adicionarDespesa={adicionarDespesa}
       eliminarDespesa={eliminarDespesa}
+      atualizarDespesa={atualizarDespesa}
       temaEscuro={temaEscuro}
       setTemaEscuro={setTemaEscuro}
       resumoMensal={resumoMensal}

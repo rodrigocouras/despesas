@@ -6,12 +6,15 @@ function Login({ onRegister }) {
   const [password, setPassword] = useState("");
 
   const [erro, setErro] = useState("");
+  const [sucesso, setSucesso] = useState("");
   const [aCarregar, setACarregar] = useState(false);
+  const [aRecuperar, setARecuperar] = useState(false);
 
   const handleLogin = async (e) => {
     e.preventDefault();
 
     setErro("");
+    setSucesso("");
     setACarregar(true);
 
     const { error } = await supabase.auth.signInWithPassword({
@@ -24,6 +27,32 @@ function Login({ onRegister }) {
     }
 
     setACarregar(false);
+  };
+
+  const handlePasswordRecovery = async () => {
+    setErro("");
+    setSucesso("");
+
+    if (!email.trim()) {
+      setErro("Introduz o teu email para receberes o link de recuperação.");
+      return;
+    }
+
+    setARecuperar(true);
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: window.location.origin,
+    });
+
+    if (error) {
+      setErro(error.message);
+    } else {
+      setSucesso(
+        "Se existir uma conta associada a este email, receberás um link para redefinir a palavra-passe."
+      );
+    }
+
+    setARecuperar(false);
   };
 
   return (
@@ -85,8 +114,10 @@ function Login({ onRegister }) {
               <button
                 type="button"
                 className="forgot-password"
+                onClick={handlePasswordRecovery}
+                disabled={aRecuperar || aCarregar}
               >
-                Esqueceste-te?
+                {aRecuperar ? "A enviar..." : "Esqueceste-te?"}
               </button>
             </div>
 
@@ -108,8 +139,14 @@ function Login({ onRegister }) {
           </div>
 
           {erro && (
-            <div className="auth-error">
+            <div className="auth-error" role="alert">
               {erro}
+            </div>
+          )}
+
+          {sucesso && (
+            <div className="auth-success" role="status">
+              {sucesso}
             </div>
           )}
 

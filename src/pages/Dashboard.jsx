@@ -1,22 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ExpenseForm from "../components/ExpenseForm";
-import { formatCurrency } from "../data/dashboardData";
+import RecurringExpenses from "../components/RecurringExpenses";
+import { formatCurrency, iconesEstacao } from "../data/dashboardData";
 import { supabase } from "../supabaseClient";
-
-const carregarOrcamentos = (chave) => {
-  try {
-    const guardados = window.localStorage.getItem(chave);
-    const valores = guardados ? JSON.parse(guardados) : {};
-    return valores && typeof valores === "object" && !Array.isArray(valores)
-      ? valores
-      : {};
-  } catch {
-    return {};
-  }
-};
 
 function Dashboard({
   userId,
+  userEmail,
+  userName,
+  despesas,
   categorias,
   despesasFiltradas,
   despesasDoPeriodo,
@@ -32,6 +24,7 @@ function Dashboard({
   anosDisponiveis,
   adicionarDespesa,
   eliminarDespesa,
+  atualizarDespesa,
   temaEscuro,
   setTemaEscuro,
   resumoMensal,
@@ -39,19 +32,68 @@ function Dashboard({
   setPaginaAtiva,
 }) {
   const [categoriaEstatisticas, setCategoriaEstatisticas] = useState("Todas");
+  const [categoriaOrcamento, setCategoriaOrcamento] = useState("Todas");
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
-  const chaveOrcamentos = `orcamentos:${userId}:${anoSelecionado}-${mesSelecionado + 1}`;
-  const [orcamentosEditados, setOrcamentosEditados] = useState(() => ({
-    chave: chaveOrcamentos,
-    valores: carregarOrcamentos(chaveOrcamentos),
-  }));
-  const [estadoOrcamentos, setEstadoOrcamentos] = useState({ chave: "", texto: "" });
-  const orcamentos = orcamentosEditados.chave === chaveOrcamentos
-    ? orcamentosEditados.valores
-    : carregarOrcamentos(chaveOrcamentos);
-  const mensagemOrcamentos = estadoOrcamentos.chave === chaveOrcamentos
-    ? estadoOrcamentos.texto
-    : "";
+  const [pesquisaDespesas, setPesquisaDespesas] = useState("");
+  const [categoriaPesquisa, setCategoriaPesquisa] = useState("Todas");
+  const [valorMinimo, setValorMinimo] = useState("");
+  const [valorMaximo, setValorMaximo] = useState("");
+  const [despesaEmEdicao, setDespesaEmEdicao] = useState(null);
+  const [aGuardarDespesa, setAGuardarDespesa] = useState(false);
+  const [erroEdicaoDespesa, setErroEdicaoDespesa] = useState("");
+  const [aEnviarRecuperacao, setAEnviarRecuperacao] = useState(false);
+  const [aGuardarNome, setAGuardarNome] = useState(false);
+  const [aAlterarEmail, setAAlterarEmail] = useState(false);
+  const [nomePerfil, setNomePerfil] = useState(userName);
+  const [novoEmail, setNovoEmail] = useState("");
+  const [mensagemDefinicoes, setMensagemDefinicoes] = useState({
+    tipo: "",
+    texto: "",
+  });
+  const [orcamentos, setOrcamentos] = useState({});
+  const [aCarregarOrcamentos, setACarregarOrcamentos] = useState(true);
+  const [aGuardarOrcamentos, setAGuardarOrcamentos] = useState(false);
+  const [mensagemOrcamentos, setMensagemOrcamentos] = useState("");
+
+  useEffect(() => {
+    let ativo = true;
+
+    const carregarOrcamentos = async () => {
+      setACarregarOrcamentos(true);
+      setMensagemOrcamentos("");
+      setOrcamentos({});
+
+      const { data, error } = await supabase
+        .from("orcamentos")
+        .select("categoria, limite")
+        .eq("user_id", userId)
+        .eq("ano", anoSelecionado)
+        .eq("mes", mesSelecionado);
+
+      if (!ativo) return;
+
+      if (error) {
+        setMensagemOrcamentos(`Não foi possível carregar os orçamentos: ${error.message}`);
+      } else {
+        setOrcamentos(
+          Object.fromEntries(
+            data.map((orcamento) => [
+              orcamento.categoria,
+              String(orcamento.limite),
+            ])
+          )
+        );
+      }
+
+      setACarregarOrcamentos(false);
+    };
+
+    carregarOrcamentos();
+
+    return () => {
+      ativo = false;
+    };
+  }, [userId, anoSelecionado, mesSelecionado]);
 
   const terminarSessao = async () => {
     await supabase.auth.signOut();
@@ -60,6 +102,220 @@ function Dashboard({
   const navegarNoMenu = (pagina) => {
     setPaginaAtiva(pagina);
     setMenuMobileAberto(false);
+  };
+
+  const despesasVisiveis = despesasDoPeriodo.filter((despesa) => {
+    const pesquisa = pesquisaDespesas.trim().toLocaleLowerCase("pt-PT");
+    const correspondePesquisa =
+      !pesquisa ||
+      [despesa.descricao, despesa.categoria || "Outros"]
+        .some((valor) => String(valor).toLocaleLowerCase("pt-PT").includes(pesquisa));
+    const correspondeCategoria =
+      categoriaPesquisa === "Todas" ||
+      (despesa.categoria || "Outros") === categoriaPesquisa;
+    const valor = Number(despesa.valor);
+    const correspondeValorMinimo =
+      valorMinimo === "" || valor >= Number(valorMinimo);
+    const correspondeValorMaximo =
+      valorMaximo === "" || valor <= Number(valorMaximo);
+
+    return (
+      correspondePesquisa &&
+      correspondeCategoria &&
+      correspondeValorMinimo &&
+      correspondeValorMaximo
+    );
+  });
+  const totalDespesasVisiveis = despesasVisiveis.reduce(
+    (soma, despesa) => soma + Number(despesa.valor),
+    0
+  );
+
+  const iniciarEdicaoDespesa = (despesa) => {
+    setErroEdicaoDespesa("");
+    setDespesaEmEdicao({
+      id: despesa.id,
+      descricao: despesa.descricao || "",
+      valor: String(despesa.valor),
+      categoria: despesa.categoria || "Outros",
+    });
+  };
+
+  const guardarEdicaoDespesa = async (event) => {
+    event.preventDefault();
+    const descricao = despesaEmEdicao.descricao.trim();
+    const valor = Number(despesaEmEdicao.valor);
+
+    if (!descricao || !Number.isFinite(valor) || valor <= 0) {
+      setErroEdicaoDespesa("Indica uma descrição e um valor superior a zero.");
+      return;
+    }
+
+    setAGuardarDespesa(true);
+    setErroEdicaoDespesa("");
+
+    try {
+      await atualizarDespesa(despesaEmEdicao.id, {
+        descricao,
+        valor,
+        categoria: despesaEmEdicao.categoria,
+      });
+      setDespesaEmEdicao(null);
+    } catch (error) {
+      setErroEdicaoDespesa(`Não foi possível guardar a despesa: ${error.message}`);
+    } finally {
+      setAGuardarDespesa(false);
+    }
+  };
+
+  const exportarDespesas = (listaDespesas, nomeFicheiro) => {
+    const escaparCsv = (valor) => {
+      const texto = String(valor ?? "");
+      const seguro = /^[\t\r=+\-@]/.test(texto) ? `'${texto}` : texto;
+      return `"${seguro.replace(/"/g, '""')}"`;
+    };
+    const linhas = [
+      ["Mês", "Descrição", "Categoria", "Valor (€)"],
+      ...listaDespesas.map((despesa) => [
+        new Date(despesa.created_at).toLocaleDateString("pt-PT", {
+          month: "long",
+          year: "numeric",
+        }),
+        despesa.descricao,
+        despesa.categoria || "Outros",
+        Number(despesa.valor).toLocaleString("pt-PT", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }),
+      ]),
+    ];
+    const csv = `\uFEFF${linhas
+      .map((linha) => linha.map(escaparCsv).join(";"))
+      .join("\r\n")}`;
+    const ficheiro = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(ficheiro);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = nomeFicheiro;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+
+  const guardarNomePerfil = async (event) => {
+    event.preventDefault();
+    const nome = nomePerfil.trim();
+
+    if (!nome) {
+      setMensagemDefinicoes({ tipo: "erro", texto: "Introduz um nome válido." });
+      return;
+    }
+
+    setAGuardarNome(true);
+    setMensagemDefinicoes({ tipo: "", texto: "" });
+
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        data: { full_name: nome },
+      });
+
+      if (error) {
+        setMensagemDefinicoes({
+          tipo: "erro",
+          texto: `Não foi possível guardar o nome: ${error.message}`,
+        });
+      } else if (data.user?.user_metadata?.full_name !== nome) {
+        setMensagemDefinicoes({
+          tipo: "erro",
+          texto: "O Supabase não confirmou que o nome foi guardado. Tenta novamente.",
+        });
+      } else {
+        setNomePerfil(nome);
+        setMensagemDefinicoes({
+          tipo: "sucesso",
+          texto: "O nome do perfil foi atualizado.",
+        });
+      }
+    } catch (error) {
+      setMensagemDefinicoes({
+        tipo: "erro",
+        texto: `Não foi possível guardar o nome: ${error.message}`,
+      });
+    } finally {
+      setAGuardarNome(false);
+    }
+  };
+
+  const alterarEmail = async (event) => {
+    event.preventDefault();
+    const email = novoEmail.trim();
+
+    if (!email || email.toLowerCase() === userEmail.toLowerCase()) {
+      setMensagemDefinicoes({
+        tipo: "erro",
+        texto: "Introduz um email diferente do email atual.",
+      });
+      return;
+    }
+
+    setAAlterarEmail(true);
+    setMensagemDefinicoes({ tipo: "", texto: "" });
+
+    try {
+      const { error } = await supabase.auth.updateUser({ email });
+
+      if (error) {
+        setMensagemDefinicoes({
+          tipo: "erro",
+          texto: `Não foi possível alterar o email: ${error.message}`,
+        });
+      } else {
+        setNovoEmail("");
+        setMensagemDefinicoes({
+          tipo: "sucesso",
+          texto:
+            "Enviámos uma confirmação para concluir a alteração do email. O email da conta só muda depois da confirmação.",
+        });
+      }
+    } catch (error) {
+      setMensagemDefinicoes({
+        tipo: "erro",
+        texto: `Não foi possível alterar o email: ${error.message}`,
+      });
+    } finally {
+      setAAlterarEmail(false);
+    }
+  };
+
+  const enviarRecuperacaoPassword = async () => {
+    setAEnviarRecuperacao(true);
+    setMensagemDefinicoes({ tipo: "", texto: "" });
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(userEmail, {
+        redirectTo: window.location.origin,
+      });
+
+      if (error) {
+        setMensagemDefinicoes({
+          tipo: "erro",
+          texto: `Não foi possível enviar o email: ${error.message}`,
+        });
+      } else {
+        setMensagemDefinicoes({
+          tipo: "sucesso",
+          texto: "Enviámos um link para redefinir a palavra-passe para o teu email.",
+        });
+      }
+    } catch (error) {
+      setMensagemDefinicoes({
+        tipo: "erro",
+        texto: `Não foi possível enviar o email: ${error.message}`,
+      });
+    } finally {
+      setAEnviarRecuperacao(false);
+    }
   };
 
   const mediaDiaria =
@@ -120,17 +376,69 @@ function Dashboard({
   const categoriaPrincipalResumo = Object.entries(gastosDoPeriodoPorCategoria).sort(
     (a, b) => b[1] - a[1]
   )[0];
-  const guardarOrcamentos = (event) => {
+  const totalLimitesOrcamento = Object.values(orcamentos).reduce(
+    (soma, limite) => soma + (Number(limite) > 0 ? Number(limite) : 0),
+    0
+  );
+  const diferencaOrcamento = totalLimitesOrcamento - total;
+  const guardarOrcamentos = async (event) => {
     event.preventDefault();
+    setAGuardarOrcamentos(true);
+    setMensagemOrcamentos("");
 
     try {
-      window.localStorage.setItem(chaveOrcamentos, JSON.stringify(orcamentos));
-      setEstadoOrcamentos({ chave: chaveOrcamentos, texto: "Orçamentos guardados." });
-    } catch {
-      setEstadoOrcamentos({
-        chave: chaveOrcamentos,
-        texto: "Não foi possível guardar os orçamentos neste browser.",
-      });
+      const valores = Object.entries(orcamentos).filter(
+        ([, limite]) => limite !== "" && Number(limite) > 0
+      );
+      const categoriasSemLimite = categorias
+        .filter(
+          (categoria) =>
+            categoria.nome !== "Todas" &&
+            !valores.some(([nome]) => nome === categoria.nome)
+        )
+        .map((categoria) => categoria.nome);
+
+      const operacoes = [];
+
+      if (valores.length > 0) {
+        operacoes.push(
+          supabase.from("orcamentos").upsert(
+            valores.map(([categoria, limite]) => ({
+              user_id: userId,
+              ano: anoSelecionado,
+              mes: mesSelecionado,
+              categoria,
+              limite: Number(limite),
+            })),
+            { onConflict: "user_id,ano,mes,categoria" }
+          )
+        );
+      }
+
+      if (categoriasSemLimite.length > 0) {
+        operacoes.push(
+          supabase
+            .from("orcamentos")
+            .delete()
+            .eq("user_id", userId)
+            .eq("ano", anoSelecionado)
+            .eq("mes", mesSelecionado)
+            .in("categoria", categoriasSemLimite)
+        );
+      }
+
+      const resultados = await Promise.all(operacoes);
+      const erro = resultados.find((resultado) => resultado.error)?.error;
+
+      if (erro) {
+        setMensagemOrcamentos(`Não foi possível guardar os orçamentos: ${erro.message}`);
+      } else {
+        setMensagemOrcamentos("Orçamentos guardados no Supabase.");
+      }
+    } catch (error) {
+      setMensagemOrcamentos(`Não foi possível guardar os orçamentos: ${error.message}`);
+    } finally {
+      setAGuardarOrcamentos(false);
     }
   };
   const titulosPagina = {
@@ -140,9 +448,181 @@ function Dashboard({
     estatisticas: "Estatísticas",
     categorias: "Categorias",
     orcamentos: "Orçamentos",
+    definicoes: "Definições",
   };
 
   const renderConteudo = () => {
+    if (paginaAtiva === "definicoes") {
+      return (
+        <div className="settings-grid">
+          <section className="dashboard-card settings-card">
+            <div className="card-heading">
+              <div>
+                <h2>A tua conta</h2>
+                <p>Informações associadas ao teu perfil.</p>
+              </div>
+              <span className="settings-icon" aria-hidden="true">👤</span>
+            </div>
+
+            <div className="settings-detail">
+              <span>Email</span>
+              <strong>{userEmail || "Email indisponível"}</strong>
+            </div>
+            <div className="settings-detail">
+              <span>Despesas no período</span>
+              <strong>{despesasDoPeriodo.length}</strong>
+            </div>
+
+            <form className="settings-form" onSubmit={guardarNomePerfil}>
+              <label htmlFor="settings-profile-name">Nome do perfil</label>
+              <div className="settings-form-row">
+                <input
+                  id="settings-profile-name"
+                  type="text"
+                  autoComplete="name"
+                  maxLength={80}
+                  value={nomePerfil}
+                  onChange={(event) => setNomePerfil(event.target.value)}
+                  placeholder="O teu nome"
+                  required
+                />
+                <button
+                  type="submit"
+                  className="settings-button"
+                  disabled={aGuardarNome}
+                >
+                  {aGuardarNome ? "A guardar..." : "Guardar nome"}
+                </button>
+              </div>
+              <p className="settings-help">
+                Guardado nos metadados do Supabase Auth; não precisa de uma coluna na tabela de despesas.
+              </p>
+            </form>
+
+            <form className="settings-form" onSubmit={alterarEmail}>
+              <label htmlFor="settings-new-email">Alterar email</label>
+              <div className="settings-form-row">
+                <input
+                  id="settings-new-email"
+                  type="email"
+                  autoComplete="email"
+                  value={novoEmail}
+                  onChange={(event) => setNovoEmail(event.target.value)}
+                  placeholder={userEmail}
+                  required
+                />
+                <button
+                  type="submit"
+                  className="settings-button"
+                  disabled={aAlterarEmail}
+                >
+                  {aAlterarEmail ? "A enviar..." : "Alterar email"}
+                </button>
+              </div>
+              <p className="settings-help">
+                A alteração só fica ativa depois de confirmares o email.
+              </p>
+            </form>
+
+            <div className="settings-action">
+              <div>
+                <strong>Alterar palavra-passe</strong>
+                <p>Envia um link seguro para o teu email.</p>
+              </div>
+              <button
+                type="button"
+                className="settings-button"
+                onClick={enviarRecuperacaoPassword}
+                disabled={aEnviarRecuperacao || !userEmail}
+              >
+                {aEnviarRecuperacao ? "A enviar..." : "Enviar link"}
+              </button>
+            </div>
+          </section>
+
+          <section className="dashboard-card settings-card">
+            <div className="card-heading">
+              <div>
+                <h2>Aparência</h2>
+                <p>Escolhe o tema da aplicação.</p>
+              </div>
+              <span className="settings-icon" aria-hidden="true">
+                {temaEscuro ? "🌙" : "☀️"}
+              </span>
+            </div>
+
+            <div className="settings-action">
+              <div>
+                <strong>{temaEscuro ? "Tema escuro" : "Tema claro"}</strong>
+                <p>A preferência fica guardada neste dispositivo.</p>
+              </div>
+              <button
+                type="button"
+                className="settings-button"
+                onClick={() => setTemaEscuro((valor) => !valor)}
+                aria-pressed={temaEscuro}
+              >
+                Mudar para {temaEscuro ? "claro" : "escuro"}
+              </button>
+            </div>
+          </section>
+
+          <section className="dashboard-card settings-card">
+            <div className="card-heading">
+              <div>
+                <h2>Os teus dados</h2>
+                <p>Exporta uma cópia das despesas do período selecionado.</p>
+              </div>
+              <span className="settings-icon" aria-hidden="true">⇩</span>
+            </div>
+
+            <div className="settings-action">
+              <div>
+                <strong>{meses[mesSelecionado]} {anoSelecionado}</strong>
+                <p>{despesasDoPeriodo.length} despesas disponíveis para exportação.</p>
+              </div>
+              <button
+                type="button"
+                className="settings-button"
+                onClick={() =>
+                  exportarDespesas(
+                    despesasDoPeriodo,
+                    `despesas-${anoSelecionado}-${String(mesSelecionado + 1).padStart(2, "0")}.csv`
+                  )
+                }
+                disabled={despesasDoPeriodo.length === 0}
+              >
+                Exportar CSV
+              </button>
+            </div>
+            <div className="settings-action">
+              <div>
+                <strong>Histórico completo</strong>
+                <p>{despesas.length} despesas de todos os períodos.</p>
+              </div>
+              <button
+                type="button"
+                className="settings-button"
+                onClick={() => exportarDespesas(despesas, "todas-as-despesas.csv")}
+                disabled={despesas.length === 0}
+              >
+                Exportar tudo
+              </button>
+            </div>
+          </section>
+
+          {mensagemDefinicoes.texto && (
+            <div
+              className={`settings-message ${mensagemDefinicoes.tipo}`}
+              role={mensagemDefinicoes.tipo === "erro" ? "alert" : "status"}
+            >
+              {mensagemDefinicoes.texto}
+            </div>
+          )}
+        </div>
+      );
+    }
+
     if (paginaAtiva === "resumo") {
       return (
         <>
@@ -246,12 +726,69 @@ function Dashboard({
               <div>
                 <h2>Despesas recentes</h2>
                 <p>
-                  {despesasDoPeriodo.length}{" "}
+                  {despesasVisiveis.length} de {despesasDoPeriodo.length}{" "}
                   {despesasDoPeriodo.length === 1 ? "despesa" : "despesas"}
                 </p>
               </div>
 
-              <strong>{formatCurrency(total)}</strong>
+              <strong>{formatCurrency(totalDespesasVisiveis)}</strong>
+            </div>
+
+            <div className="expense-filters" aria-label="Filtros de despesas">
+              <div className="expense-filter-search">
+                <label htmlFor="pesquisa-despesas">Pesquisar</label>
+                <input
+                  id="pesquisa-despesas"
+                  type="search"
+                  value={pesquisaDespesas}
+                  onChange={(event) => setPesquisaDespesas(event.target.value)}
+                  placeholder="Descrição ou categoria"
+                />
+              </div>
+
+              <div className="expense-filter-category">
+                <label htmlFor="categoria-pesquisa">Categoria</label>
+                <select
+                  id="categoria-pesquisa"
+                  value={categoriaPesquisa}
+                  onChange={(event) => setCategoriaPesquisa(event.target.value)}
+                >
+                  <option value="Todas">Todas</option>
+                  {categorias
+                    .filter((item) => item.nome !== "Todas")
+                    .map((item) => (
+                      <option key={item.nome} value={item.nome}>
+                        {item.nome}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="expense-filter-amount">
+                <label htmlFor="valor-minimo">Valor mín. (€)</label>
+                <input
+                  id="valor-minimo"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={valorMinimo}
+                  onChange={(event) => setValorMinimo(event.target.value)}
+                  placeholder="Sem mínimo"
+                />
+              </div>
+
+              <div className="expense-filter-amount">
+                <label htmlFor="valor-maximo">Valor máx. (€)</label>
+                <input
+                  id="valor-maximo"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={valorMaximo}
+                  onChange={(event) => setValorMaximo(event.target.value)}
+                  placeholder="Sem máximo"
+                />
+              </div>
             </div>
 
             <div className="expenses">
@@ -261,42 +798,170 @@ function Dashboard({
                   <h3>Nenhuma despesa</h3>
                   <p>Não existem despesas neste período.</p>
                 </div>
+              ) : despesasVisiveis.length === 0 ? (
+                <div className="empty">
+                  <div className="empty-icon">🔎</div>
+                  <h3>Sem resultados</h3>
+                  <p>Não encontrámos despesas com estes filtros.</p>
+                  <button
+                    type="button"
+                    className="clear-expense-filters"
+                    onClick={() => {
+                      setPesquisaDespesas("");
+                      setCategoriaPesquisa("Todas");
+                      setValorMinimo("");
+                      setValorMaximo("");
+                    }}
+                  >
+                    Limpar filtros
+                  </button>
+                </div>
               ) : (
-                despesasDoPeriodo.map((despesa) => {
+                despesasVisiveis.map((despesa) => {
                   const categoria = categorias.find(
                     (item) => item.nome === (despesa.categoria || "Outros")
                   );
 
                   return (
-                    <div className="expense-card" key={despesa.id}>
-                      <div className="expense-icon">{categoria?.icone || "📦"}</div>
+                    despesaEmEdicao?.id === despesa.id ? (
+                      <form
+                        className="expense-edit-form"
+                        key={despesa.id}
+                        onSubmit={guardarEdicaoDespesa}
+                      >
+                        <div className="form-group">
+                          <label htmlFor={`edit-descricao-${despesa.id}`}>
+                            Descrição
+                          </label>
+                          <input
+                            id={`edit-descricao-${despesa.id}`}
+                            type="text"
+                            maxLength={120}
+                            value={despesaEmEdicao.descricao}
+                            onChange={(event) =>
+                              setDespesaEmEdicao((atual) => ({
+                                ...atual,
+                                descricao: event.target.value,
+                              }))
+                            }
+                            required
+                          />
+                        </div>
 
-                      <div className="expense-info">
-                        <h3>{despesa.descricao}</h3>
-                        <p>
-                          {categoria?.nome || "Outros"}
-                          {" • "}
-                          {new Date(despesa.created_at).toLocaleDateString("pt-PT")}
-                        </p>
+                        <div className="form-group">
+                          <label htmlFor={`edit-valor-${despesa.id}`}>Valor</label>
+                          <input
+                            id={`edit-valor-${despesa.id}`}
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={despesaEmEdicao.valor}
+                            onChange={(event) =>
+                              setDespesaEmEdicao((atual) => ({
+                                ...atual,
+                                valor: event.target.value,
+                              }))
+                            }
+                            required
+                          />
+                        </div>
+
+                        <div className="form-group">
+                          <label htmlFor={`edit-categoria-${despesa.id}`}>
+                            Categoria
+                          </label>
+                          <select
+                            id={`edit-categoria-${despesa.id}`}
+                            value={despesaEmEdicao.categoria}
+                            onChange={(event) =>
+                              setDespesaEmEdicao((atual) => ({
+                                ...atual,
+                                categoria: event.target.value,
+                              }))
+                            }
+                          >
+                            {categorias
+                              .filter((item) => item.nome !== "Todas")
+                              .map((item) => (
+                                <option key={item.nome} value={item.nome}>
+                                  {item.nome}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+
+                        <div className="expense-edit-actions">
+                          <button
+                            type="submit"
+                            className="expense-save-button"
+                            disabled={aGuardarDespesa}
+                          >
+                            {aGuardarDespesa ? "A guardar..." : "Guardar"}
+                          </button>
+                          <button
+                            type="button"
+                            className="expense-cancel-button"
+                            onClick={() => {
+                              setDespesaEmEdicao(null);
+                              setErroEdicaoDespesa("");
+                            }}
+                            disabled={aGuardarDespesa}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                        {erroEdicaoDespesa && (
+                          <p className="expense-edit-error" role="alert">
+                            {erroEdicaoDespesa}
+                          </p>
+                        )}
+                      </form>
+                    ) : (
+                      <div className="expense-card" key={despesa.id}>
+                        <div className="expense-icon">{categoria?.icone || "📦"}</div>
+
+                        <div className="expense-info">
+                          <h3>{despesa.descricao}</h3>
+                          <p>
+                            {categoria?.nome || "Outros"}
+                            {" • "}
+                            {new Date(despesa.created_at).toLocaleDateString("pt-PT", {
+                              month: "long",
+                              year: "numeric",
+                            })}
+                          </p>
+                        </div>
+
+                        <div className="expense-value">
+                          <strong>{formatCurrency(despesa.valor)}</strong>
+                          <button
+                            type="button"
+                            className="edit-button"
+                            onClick={() => iniciarEdicaoDespesa(despesa)}
+                            title="Editar despesa"
+                            aria-label={`Editar ${despesa.descricao}`}
+                          >
+                            ✎
+                          </button>
+                          <button
+                            type="button"
+                            className="delete-button"
+                            onClick={() => eliminarDespesa(despesa.id)}
+                            title="Eliminar despesa"
+                            aria-label={`Eliminar ${despesa.descricao}`}
+                          >
+                            🗑️
+                          </button>
+                        </div>
                       </div>
-
-                      <div className="expense-value">
-                        <strong>{formatCurrency(despesa.valor)}</strong>
-
-                        <button
-                          className="delete-button"
-                          onClick={() => eliminarDespesa(despesa.id)}
-                          title="Eliminar despesa"
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                    </div>
+                    )
                   );
                 })
               )}
             </div>
           </section>
+
+          <RecurringExpenses userId={userId} categorias={categorias} />
         </>
       );
     }
@@ -414,7 +1079,7 @@ function Dashboard({
                 >
                   {meses.map((mes, index) => (
                     <option key={mes} value={index}>
-                      {mes}
+                      {iconesEstacao[index]} {mes}
                     </option>
                   ))}
                 </select>
@@ -505,7 +1170,7 @@ function Dashboard({
               </div>
             </div>
 
-            <div className="dashboard-filters">
+            <div className="dashboard-filters budget-period-filters">
               <div className="filter">
                 <label htmlFor="budget-year">Ano</label>
                 <select
@@ -527,11 +1192,85 @@ function Dashboard({
                   onChange={(event) => setMesSelecionado(Number(event.target.value))}
                 >
                   {meses.map((mes, index) => (
-                    <option key={mes} value={index}>{mes}</option>
+                    <option key={mes} value={index}>
+                      {iconesEstacao[index]} {mes}
+                    </option>
                   ))}
                 </select>
               </div>
+
+              <div className="filter">
+                <label htmlFor="budget-category-filter">Categoria</label>
+                <select
+                  id="budget-category-filter"
+                  value={categoriaOrcamento}
+                  onChange={(event) => setCategoriaOrcamento(event.target.value)}
+                >
+                  <option value="Todas">Todas as categorias</option>
+                  {categorias
+                    .filter((categoria) => categoria.nome !== "Todas")
+                    .map((categoria) => (
+                      <option key={categoria.nome} value={categoria.nome}>
+                        {categoria.icone} {categoria.nome}
+                      </option>
+                    ))}
+                </select>
+              </div>
             </div>
+          </section>
+
+          <section className="dashboard-card budget-summary-card" aria-labelledby="budget-summary-title">
+            <div className="card-heading">
+              <div>
+                <h2 id="budget-summary-title">Resumo do orçamento</h2>
+                <p>
+                  Comparação de todos os limites definidos com as despesas de{" "}
+                  {meses[mesSelecionado]} de {anoSelecionado}.
+                </p>
+              </div>
+            </div>
+
+            {aCarregarOrcamentos ? (
+              <p className="budget-summary-loading" role="status">
+                A carregar o resumo...
+              </p>
+            ) : (
+              <div className="budget-summary-grid">
+                <div className="budget-summary-item">
+                  <span>Total dos limites</span>
+                  <strong>{formatCurrency(totalLimitesOrcamento)}</strong>
+                </div>
+                <div className="budget-summary-item">
+                  <span>Total gasto</span>
+                  <strong>{formatCurrency(total)}</strong>
+                </div>
+                <div
+                  className={`budget-summary-item ${
+                    totalLimitesOrcamento > 0
+                      ? diferencaOrcamento >= 0
+                        ? "is-within-budget"
+                        : "is-over-budget"
+                      : ""
+                  }`}
+                >
+                  <span>
+                    {totalLimitesOrcamento > 0
+                      ? diferencaOrcamento >= 0
+                        ? "Ainda disponível"
+                        : "Acima dos limites"
+                      : "Diferença"}
+                  </span>
+                  <strong>
+                    {totalLimitesOrcamento > 0
+                      ? formatCurrency(Math.abs(diferencaOrcamento))
+                      : "Define pelo menos um limite"}
+                  </strong>
+                </div>
+              </div>
+            )}
+            <p className="budget-summary-note">
+              O resumo considera todos os limites e todas as categorias, mesmo quando aplicas o filtro abaixo.
+            </p>
           </section>
 
           <section className="dashboard-card budget-card">
@@ -544,8 +1283,17 @@ function Dashboard({
 
             <form className="budget-form" onSubmit={guardarOrcamentos}>
               <div className="budget-list">
-                {categorias
-                  .filter((categoria) => categoria.nome !== "Todas")
+                {aCarregarOrcamentos ? (
+                  <div className="empty" role="status">
+                    A carregar os orçamentos...
+                  </div>
+                ) : categorias
+                  .filter(
+                    (categoria) =>
+                      categoria.nome !== "Todas" &&
+                      (categoriaOrcamento === "Todas" ||
+                        categoria.nome === categoriaOrcamento)
+                  )
                   .map((categoria) => {
                     const gasto = gastosDoPeriodoPorCategoria[categoria.nome] || 0;
                     const limite = Number(orcamentos[categoria.nome]) || 0;
@@ -600,15 +1348,13 @@ function Dashboard({
                               inputMode="decimal"
                               placeholder="0,00"
                               value={orcamentos[categoria.nome] ?? ""}
+                              disabled={aGuardarOrcamentos}
                               onChange={(event) => {
-                                setOrcamentosEditados({
-                                  chave: chaveOrcamentos,
-                                  valores: {
-                                    ...orcamentos,
-                                    [categoria.nome]: event.target.value,
-                                  },
-                                });
-                                setEstadoOrcamentos({ chave: chaveOrcamentos, texto: "" });
+                                setOrcamentos((atuais) => ({
+                                  ...atuais,
+                                  [categoria.nome]: event.target.value,
+                                }));
+                                setMensagemOrcamentos("");
                               }}
                             />
                             <span>€</span>
@@ -620,11 +1366,32 @@ function Dashboard({
               </div>
 
               <div className="budget-actions">
-                <p aria-live="polite">
-                  {mensagemOrcamentos || "Os valores ficam guardados neste dispositivo."}
-                </p>
-                <button type="submit" className="add-expense-button">
-                  Guardar orçamento
+                {mensagemOrcamentos ? (
+                  <div
+                    className={`budget-save-feedback ${
+                      mensagemOrcamentos.startsWith("Não") ? "is-error" : "is-success"
+                    }`}
+                    aria-live="polite"
+                    role={mensagemOrcamentos.startsWith("Não") ? "alert" : "status"}
+                  >
+                    <span aria-hidden="true">
+                      {mensagemOrcamentos.startsWith("Não") ? "!" : "✓"}
+                    </span>
+                    {mensagemOrcamentos}
+                  </div>
+                ) : (
+                  <p>Os valores serão guardados na tua conta Supabase.</p>
+                )}
+                <button
+                  type="submit"
+                  className="add-expense-button"
+                  disabled={aCarregarOrcamentos || aGuardarOrcamentos}
+                >
+                  {aGuardarOrcamentos
+                    ? "A guardar..."
+                    : mensagemOrcamentos === "Orçamentos guardados no Supabase."
+                      ? "Guardado ✓"
+                      : "Guardar orçamento"}
                 </button>
               </div>
             </form>
@@ -718,7 +1485,7 @@ function Dashboard({
               >
                 {meses.map((mes, index) => (
                   <option key={mes} value={index}>
-                    {mes}
+                    {iconesEstacao[index]} {mes}
                   </option>
                 ))}
               </select>
@@ -807,10 +1574,15 @@ function Dashboard({
         </nav>
 
         <div className="sidebar-bottom">
-          <a href="#definicoes" className="nav-item">
+          <button
+            type="button"
+            className={`nav-item ${paginaAtiva === "definicoes" ? "active" : ""}`}
+            onClick={() => navegarNoMenu("definicoes")}
+            aria-current={paginaAtiva === "definicoes" ? "page" : undefined}
+          >
             <span>⚙</span>
             Definições
-          </a>
+          </button>
 
           <button
             type="button"
@@ -870,6 +1642,18 @@ function Dashboard({
             )}
           </div>
         </header>
+
+        {paginaAtiva === "dashboard" && (
+          <section className="dashboard-card dashboard-welcome">
+            <p className="eyebrow">A TUA ÁREA FINANCEIRA</p>
+            <h2>
+              Olá{nomePerfil.trim() ? `, ${nomePerfil.trim()}` : ""}!
+            </h2>
+            <p>
+              Aqui está o teu resumo de {meses[mesSelecionado]} de {anoSelecionado}.
+            </p>
+          </section>
+        )}
 
         {renderConteudo()}
       </main>
