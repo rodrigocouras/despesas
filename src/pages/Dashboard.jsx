@@ -1719,15 +1719,6 @@ function Dashboard({
           </div>
 
           <div className="header-actions">
-            <button
-              type="button"
-              className="theme-toggle"
-              onClick={() => setTemaEscuro((valor) => !valor)}
-            >
-              <span>{temaEscuro ? "☀️" : "🌙"}</span>
-              {temaEscuro ? "Claro" : "Escuro"}
-            </button>
-
             {paginaAtiva !== "despesas" && (
               <button
                 className="add-expense-button"
