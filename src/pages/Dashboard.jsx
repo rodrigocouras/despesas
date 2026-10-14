@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ExpenseForm from "../components/ExpenseForm";
 import RecurringExpenses from "../components/RecurringExpenses";
+import Select from "../components/Select";
 import { formatCurrency, iconesEstacao } from "../data/dashboardData";
 import { supabase } from "../supabaseClient";
 
@@ -33,7 +34,10 @@ function Dashboard({
 }) {
   const [categoriaEstatisticas, setCategoriaEstatisticas] = useState("Todas");
   const [categoriaOrcamento, setCategoriaOrcamento] = useState("Todas");
+  const [abaDespesas, setAbaDespesas] = useState("diarias");
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
+  const botaoMenuMobileRef = useRef(null);
+  const botaoFecharMenuRef = useRef(null);
   const [pesquisaDespesas, setPesquisaDespesas] = useState("");
   const [categoriaPesquisa, setCategoriaPesquisa] = useState("Todas");
   const [valorMinimo, setValorMinimo] = useState("");
@@ -103,6 +107,33 @@ function Dashboard({
     setPaginaAtiva(pagina);
     setMenuMobileAberto(false);
   };
+
+  const navegarAbasDespesas = (event, aba) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+
+    event.preventDefault();
+    setAbaDespesas(aba);
+    document
+      .getElementById(aba === "diarias" ? "tab-despesas-diarias" : "tab-despesas-recorrentes")
+      ?.focus();
+  };
+
+  useEffect(() => {
+    if (!menuMobileAberto) return undefined;
+
+    const botaoMenuMobile = botaoMenuMobileRef.current;
+    const fecharComEscape = (event) => {
+      if (event.key === "Escape") setMenuMobileAberto(false);
+    };
+
+    document.addEventListener("keydown", fecharComEscape);
+    botaoFecharMenuRef.current?.focus();
+
+    return () => {
+      document.removeEventListener("keydown", fecharComEscape);
+      botaoMenuMobile?.focus();
+    };
+  }, [menuMobileAberto]);
 
   const despesasVisiveis = despesasDoPeriodo.filter((despesa) => {
     const pesquisa = pesquisaDespesas.trim().toLocaleLowerCase("pt-PT");
@@ -710,6 +741,43 @@ function Dashboard({
     if (paginaAtiva === "despesas") {
       return (
         <>
+          <div className="expense-tabs" role="tablist" aria-label="Tipo de despesa">
+            <button
+              id="tab-despesas-diarias"
+              type="button"
+              role="tab"
+              className={`expense-tab ${abaDespesas === "diarias" ? "active" : ""}`}
+              aria-selected={abaDespesas === "diarias"}
+              aria-controls="panel-despesas"
+              tabIndex={abaDespesas === "diarias" ? 0 : -1}
+              onClick={() => setAbaDespesas("diarias")}
+              onKeyDown={(event) => navegarAbasDespesas(event, "recorrentes")}
+            >
+              <span className="expense-tab-icon" aria-hidden="true">↗</span>
+              <span>Diárias</span>
+            </button>
+            <button
+              id="tab-despesas-recorrentes"
+              type="button"
+              role="tab"
+              className={`expense-tab ${abaDespesas === "recorrentes" ? "active" : ""}`}
+              aria-selected={abaDespesas === "recorrentes"}
+              aria-controls="panel-despesas"
+              tabIndex={abaDespesas === "recorrentes" ? 0 : -1}
+              onClick={() => setAbaDespesas("recorrentes")}
+              onKeyDown={(event) => navegarAbasDespesas(event, "diarias")}
+            >
+              <span className="expense-tab-icon" aria-hidden="true">⟳</span>
+              <span>Recorrentes</span>
+            </button>
+          </div>
+          <div
+            id="panel-despesas"
+            role="tabpanel"
+            aria-labelledby={abaDespesas === "diarias" ? "tab-despesas-diarias" : "tab-despesas-recorrentes"}
+          >
+          {abaDespesas === "diarias" && (
+            <>
           <section className="dashboard-card expense-form-section" id="expense-form">
             <div className="card-heading">
               <div>
@@ -748,20 +816,20 @@ function Dashboard({
 
               <div className="expense-filter-category">
                 <label htmlFor="categoria-pesquisa">Categoria</label>
-                <select
+                <Select
                   id="categoria-pesquisa"
                   value={categoriaPesquisa}
                   onChange={(event) => setCategoriaPesquisa(event.target.value)}
                 >
-                  <option value="Todas">Todas</option>
+                  <option value="Todas">📋 Todas</option>
                   {categorias
                     .filter((item) => item.nome !== "Todas")
                     .map((item) => (
                       <option key={item.nome} value={item.nome}>
-                        {item.nome}
+                        {item.icone} {item.nome}
                       </option>
                     ))}
-                </select>
+                </Select>
               </div>
 
               <div className="expense-filter-amount">
@@ -870,7 +938,7 @@ function Dashboard({
                           <label htmlFor={`edit-categoria-${despesa.id}`}>
                             Categoria
                           </label>
-                          <select
+                          <Select
                             id={`edit-categoria-${despesa.id}`}
                             value={despesaEmEdicao.categoria}
                             onChange={(event) =>
@@ -884,10 +952,10 @@ function Dashboard({
                               .filter((item) => item.nome !== "Todas")
                               .map((item) => (
                                 <option key={item.nome} value={item.nome}>
-                                  {item.nome}
+                                  {item.icone} {item.nome}
                                 </option>
                               ))}
-                          </select>
+                          </Select>
                         </div>
 
                         <div className="expense-edit-actions">
@@ -960,8 +1028,12 @@ function Dashboard({
               )}
             </div>
           </section>
-
-          <RecurringExpenses userId={userId} categorias={categorias} />
+            </>
+          )}
+          {abaDespesas === "recorrentes" && (
+            <RecurringExpenses userId={userId} categorias={categorias} />
+          )}
+          </div>
         </>
       );
     }
@@ -1058,22 +1130,22 @@ function Dashboard({
               <div className="filter">
                 <label>Ano</label>
 
-                <select
+                <Select
                   value={anoSelecionado}
                   onChange={(event) => setAnoSelecionado(Number(event.target.value))}
                 >
                   {anosDisponiveis.map((ano) => (
                     <option key={ano} value={ano}>
-                      {ano}
+                      📅 {ano}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
 
               <div className="filter">
                 <label>Mês</label>
 
-                <select
+                <Select
                   value={mesSelecionado}
                   onChange={(event) => setMesSelecionado(Number(event.target.value))}
                 >
@@ -1082,24 +1154,24 @@ function Dashboard({
                       {iconesEstacao[index]} {mes}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
 
               <div className="filter">
                 <label>Categoria</label>
-                <select
+                <Select
                   value={categoriaEstatisticas}
                   onChange={(event) => setCategoriaEstatisticas(event.target.value)}
                 >
-                  <option value="Todas">Todas as categorias</option>
+                  <option value="Todas">📋 Todas as categorias</option>
                   {categorias
                     .filter((categoria) => categoria.nome !== "Todas")
                     .map((categoria) => (
                       <option key={categoria.nome} value={categoria.nome}>
-                        {categoria.nome}
+                        {categoria.icone} {categoria.nome}
                       </option>
                     ))}
-                </select>
+                </Select>
               </div>
             </div>
           </section>
@@ -1173,20 +1245,20 @@ function Dashboard({
             <div className="dashboard-filters budget-period-filters">
               <div className="filter">
                 <label htmlFor="budget-year">Ano</label>
-                <select
+                <Select
                   id="budget-year"
                   value={anoSelecionado}
                   onChange={(event) => setAnoSelecionado(Number(event.target.value))}
                 >
                   {anosDisponiveis.map((ano) => (
-                    <option key={ano} value={ano}>{ano}</option>
+                    <option key={ano} value={ano}>📅 {ano}</option>
                   ))}
-                </select>
+                </Select>
               </div>
 
               <div className="filter">
                 <label htmlFor="budget-month">Mês</label>
-                <select
+                <Select
                   id="budget-month"
                   value={mesSelecionado}
                   onChange={(event) => setMesSelecionado(Number(event.target.value))}
@@ -1196,17 +1268,17 @@ function Dashboard({
                       {iconesEstacao[index]} {mes}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
 
               <div className="filter">
                 <label htmlFor="budget-category-filter">Categoria</label>
-                <select
+                <Select
                   id="budget-category-filter"
                   value={categoriaOrcamento}
                   onChange={(event) => setCategoriaOrcamento(event.target.value)}
                 >
-                  <option value="Todas">Todas as categorias</option>
+                  <option value="Todas">📋 Todas as categorias</option>
                   {categorias
                     .filter((categoria) => categoria.nome !== "Todas")
                     .map((categoria) => (
@@ -1214,7 +1286,7 @@ function Dashboard({
                         {categoria.icone} {categoria.nome}
                       </option>
                     ))}
-                </select>
+                </Select>
               </div>
             </div>
           </section>
@@ -1464,22 +1536,22 @@ function Dashboard({
             <div className="filter">
               <label>Ano</label>
 
-              <select
+              <Select
                 value={anoSelecionado}
                 onChange={(event) => setAnoSelecionado(Number(event.target.value))}
               >
                 {anosDisponiveis.map((ano) => (
                   <option key={ano} value={ano}>
-                    {ano}
+                    📅 {ano}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
 
             <div className="filter">
               <label>Mês</label>
 
-              <select
+              <Select
                 value={mesSelecionado}
                 onChange={(event) => setMesSelecionado(Number(event.target.value))}
               >
@@ -1488,7 +1560,7 @@ function Dashboard({
                     {iconesEstacao[index]} {mes}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
           </div>
         </section>
@@ -1510,46 +1582,66 @@ function Dashboard({
       <aside
         className={`sidebar ${menuMobileAberto ? "mobile-open" : ""}`}
         id="primary-menu"
+        aria-label="Navegação principal"
       >
-        <div className="logo">
-          <div className="logo-icon">€</div>
-          <span>Finanças</span>
+        <div className="sidebar-header">
+          <div className="logo">
+            <div className="logo-icon" aria-hidden="true">€</div>
+            <div className="sidebar-brand-copy">
+              <span>Finanças</span>
+              <small className="sidebar-brand-caption">Controlo simples, todos os dias</small>
+            </div>
+          </div>
+          <button
+            ref={botaoFecharMenuRef}
+            type="button"
+            className="sidebar-close"
+            aria-label="Fechar menu"
+            onClick={() => setMenuMobileAberto(false)}
+          >
+            <span aria-hidden="true">×</span>
+          </button>
         </div>
 
-        <nav className="sidebar-nav">
+        <p className="sidebar-section-label">NAVEGAÇÃO</p>
+        <nav className="sidebar-nav" aria-label="Secções">
           <button
             type="button"
             className={`nav-item ${paginaAtiva === "dashboard" ? "active" : ""}`}
+            aria-current={paginaAtiva === "dashboard" ? "page" : undefined}
             onClick={() => navegarNoMenu("dashboard")}
           >
-            <span>⌂</span>
+            <span aria-hidden="true">⌂</span>
             Dashboard
           </button>
 
           <button
             type="button"
             className={`nav-item ${paginaAtiva === "resumo" ? "active" : ""}`}
+            aria-current={paginaAtiva === "resumo" ? "page" : undefined}
             onClick={() => navegarNoMenu("resumo")}
           >
-            <span>◫</span>
+            <span aria-hidden="true">◫</span>
             Resumo
           </button>
 
           <button
             type="button"
             className={`nav-item ${paginaAtiva === "despesas" ? "active" : ""}`}
+            aria-current={paginaAtiva === "despesas" ? "page" : undefined}
             onClick={() => navegarNoMenu("despesas")}
           >
-            <span>€</span>
+            <span aria-hidden="true">€</span>
             Despesas
           </button>
 
           <button
             type="button"
             className={`nav-item ${paginaAtiva === "estatisticas" ? "active" : ""}`}
+            aria-current={paginaAtiva === "estatisticas" ? "page" : undefined}
             onClick={() => navegarNoMenu("estatisticas")}
           >
-            <span>↗</span>
+            <span aria-hidden="true">↗</span>
             Estatísticas
           </button>
 
@@ -1559,28 +1651,38 @@ function Dashboard({
             aria-current={paginaAtiva === "orcamentos" ? "page" : undefined}
             onClick={() => setMenuMobileAberto(false)}
           >
-            <span>◎</span>
+            <span aria-hidden="true">◎</span>
             Orçamentos
           </a>
 
           <button
             type="button"
             className={`nav-item ${paginaAtiva === "categorias" ? "active" : ""}`}
+            aria-current={paginaAtiva === "categorias" ? "page" : undefined}
             onClick={() => navegarNoMenu("categorias")}
           >
-            <span>▦</span>
+            <span aria-hidden="true">▦</span>
             Categorias
           </button>
         </nav>
 
         <div className="sidebar-bottom">
+          <div className="sidebar-account">
+            <span className="sidebar-account-avatar" aria-hidden="true">
+              {(userName || userEmail || "U").trim().charAt(0).toLocaleUpperCase("pt-PT")}
+            </span>
+            <span className="sidebar-account-copy">
+              <strong>{userName || "A tua conta"}</strong>
+              <small>{userEmail}</small>
+            </span>
+          </div>
           <button
             type="button"
             className={`nav-item ${paginaAtiva === "definicoes" ? "active" : ""}`}
             onClick={() => navegarNoMenu("definicoes")}
             aria-current={paginaAtiva === "definicoes" ? "page" : undefined}
           >
-            <span>⚙</span>
+            <span aria-hidden="true">⚙</span>
             Definições
           </button>
 
@@ -1589,7 +1691,7 @@ function Dashboard({
             className="nav-item logout-button"
             onClick={terminarSessao}
           >
-            <span>↪</span>
+            <span aria-hidden="true">↪</span>
             Terminar sessão
           </button>
         </div>
@@ -1601,7 +1703,8 @@ function Dashboard({
             <button
               type="button"
               className="mobile-menu-toggle"
-              aria-label="Abrir menu"
+              ref={botaoMenuMobileRef}
+              aria-label={menuMobileAberto ? "Fechar menu" : "Abrir menu"}
               aria-controls="primary-menu"
               aria-expanded={menuMobileAberto}
               onClick={() => setMenuMobileAberto((aberto) => !aberto)}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Select from "./Select";
 import { proximaDataExecucao } from "../utils/recurringDates";
 import { supabase } from "../supabaseClient";
 
@@ -51,10 +52,10 @@ function RecurringExpenses({ userId, categorias }) {
     const dia = Number(diaMes);
     const valorNumerico = Number(valor);
 
-    if (!descricao.trim() || !Number.isFinite(valorNumerico) || valorNumerico <= 0) {
+    if (!descricao.trim() || !categoria || !Number.isFinite(valorNumerico) || valorNumerico <= 0) {
       setMensagem({
         tipo: "erro",
-        texto: "Indica uma descrição e um valor superior a zero.",
+        texto: "Indica uma descrição, uma categoria e um valor superior a zero.",
       });
       return;
     }
@@ -216,13 +217,13 @@ function RecurringExpenses({ userId, categorias }) {
 
         <div className="form-group">
           <label htmlFor="recorrente-categoria">Categoria</label>
-          <select
+          <Select
             id="recorrente-categoria"
             value={categoria}
             onChange={(event) => setCategoria(event.target.value)}
             required
           >
-            <option value="">Selecionar categoria</option>
+            <option value="">📂 Selecionar categoria</option>
             {categorias
               .filter((item) => item.nome !== "Todas")
               .map((item) => (
@@ -230,7 +231,7 @@ function RecurringExpenses({ userId, categorias }) {
                   {item.icone} {item.nome}
                 </option>
               ))}
-          </select>
+          </Select>
         </div>
 
         <div className="form-group">

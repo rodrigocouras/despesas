@@ -1,5 +1,6 @@
 
 import { useState } from "react";
+import Select from "./Select";
 import { categorias, iconesEstacao, meses } from "../data/dashboardData";
 import { supabase } from "../supabaseClient";
 import { guardarDespesa } from "../utils/expenses";
@@ -111,13 +112,13 @@ function ExpenseForm({ onAddExpense }) {
 
       <div className="form-group">
         <label htmlFor="nova-despesa-categoria">Categoria</label>
-        <select
+        <Select
           id="nova-despesa-categoria"
           value={categoria}
           onChange={(e) => setCategoria(e.target.value)}
           required
         >
-          <option value="">Selecionar categoria</option>
+          <option value="">📂 Selecionar categoria</option>
           {categorias
             .filter((item) => item.nome !== "Todas")
             .map((item) => (
@@ -125,12 +126,12 @@ function ExpenseForm({ onAddExpense }) {
                 {item.icone} {item.nome}
               </option>
             ))}
-        </select>
+        </Select>
       </div>
 
       <div className="form-group">
         <label htmlFor="nova-despesa-mes">Mês</label>
-        <select
+        <Select
           id="nova-despesa-mes"
           value={periodoDespesa.mes}
           onChange={(e) =>
@@ -146,12 +147,12 @@ function ExpenseForm({ onAddExpense }) {
               {iconesEstacao[index]} {mes}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
 
       <div className="form-group">
         <label htmlFor="nova-despesa-ano">Ano</label>
-        <select
+        <Select
           id="nova-despesa-ano"
           value={periodoDespesa.ano}
           onChange={(e) =>
@@ -167,10 +168,10 @@ function ExpenseForm({ onAddExpense }) {
             (_, index) => new Date().getFullYear() + 1 - index
           ).map((ano) => (
             <option key={ano} value={ano}>
-              {ano}
+              📅 {ano}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
 
       <button type="submit" className="form-button">
