@@ -4,6 +4,7 @@ import RecurringExpenses from "../components/RecurringExpenses";
 import Select from "../components/Select";
 import { formatCurrency, iconesEstacao } from "../data/dashboardData";
 import { supabase } from "../supabaseClient";
+import { getBudgetStatus } from "../utils/budgets";
 
 function Dashboard({
   userId,
@@ -206,9 +207,10 @@ function Dashboard({
       return `"${seguro.replace(/"/g, '""')}"`;
     };
     const linhas = [
-      ["Mês", "Descrição", "Categoria", "Valor (€)"],
+      ["Data", "Descrição", "Categoria", "Valor (€)"],
       ...listaDespesas.map((despesa) => [
         new Date(despesa.created_at).toLocaleDateString("pt-PT", {
+          day: "2-digit",
           month: "long",
           year: "numeric",
         }),
@@ -412,6 +414,22 @@ function Dashboard({
     0
   );
   const diferencaOrcamento = totalLimitesOrcamento - total;
+  const orcamentosAtivos = categorias
+    .filter((categoria) => categoria.nome !== "Todas")
+    .map((categoria) => {
+      const limite = Number(orcamentos[categoria.nome]) || 0;
+      const gasto = gastosDoPeriodoPorCategoria[categoria.nome] || 0;
+      const estado = getBudgetStatus(gasto, limite);
+      return {
+        ...categoria,
+        limite,
+        gasto,
+        ...estado,
+      };
+    })
+    .filter((categoria) => categoria.limite > 0)
+    .sort((a, b) => b.percentage - a.percentage);
+  const orcamentosEmDestaque = orcamentosAtivos.slice(0, 4);
   const guardarOrcamentos = async (event) => {
     event.preventDefault();
     setAGuardarOrcamentos(true);
@@ -786,7 +804,11 @@ function Dashboard({
               </div>
             </div>
 
-            <ExpenseForm onAddExpense={adicionarDespesa} />
+            <ExpenseForm
+              key={userId}
+              userId={userId}
+              onAddExpense={adicionarDespesa}
+            />
           </section>
 
           <section className="dashboard-card" id="despesas">
@@ -994,6 +1016,7 @@ function Dashboard({
                             {categoria?.nome || "Outros"}
                             {" • "}
                             {new Date(despesa.created_at).toLocaleDateString("pt-PT", {
+                              day: "2-digit",
                               month: "long",
                               year: "numeric",
                             })}
@@ -1369,13 +1392,19 @@ function Dashboard({
                   .map((categoria) => {
                     const gasto = gastosDoPeriodoPorCategoria[categoria.nome] || 0;
                     const limite = Number(orcamentos[categoria.nome]) || 0;
-                    const percentagem = limite > 0 ? (gasto / limite) * 100 : 0;
-                    const acimaDoLimite = limite > 0 && gasto > limite;
+                    const estado = getBudgetStatus(gasto, limite);
+                    const { percentage, isOverBudget, isNearBudget } = estado;
                     const idCampo = `budget-${categoria.nome}`;
 
                     return (
                       <div
-                        className={`budget-row ${acimaDoLimite ? "is-over-budget" : ""}`}
+                        className={`budget-row ${
+                          isOverBudget
+                            ? "is-over-budget"
+                            : isNearBudget
+                              ? "is-near-budget"
+                              : ""
+                        }`}
                         key={categoria.nome}
                       >
                         <div className="budget-category">
@@ -1393,18 +1422,24 @@ function Dashboard({
                             className="budget-progress"
                             role="progressbar"
                             aria-label={`Gasto em ${categoria.nome}`}
-                            aria-valuenow={Math.min(Math.round(percentagem), 100)}
+                            aria-valuenow={Math.min(Math.round(percentage), 100)}
                             aria-valuemin="0"
                             aria-valuemax="100"
+                            aria-valuetext={`${Math.round(percentage)}% do limite`}
                           >
                             <div
                               className="budget-progress-fill"
-                              style={{ width: `${Math.min(percentagem, 100)}%` }}
+                              style={{ width: `${Math.min(percentage, 100)}%` }}
                             />
                           </div>
-                          {acimaDoLimite && (
+                          {isOverBudget && (
                             <small className="budget-warning">
-                              Ultrapassaste o limite em {formatCurrency(gasto - limite)}.
+                              Ultrapassaste o limite em {formatCurrency(estado.overage)}.
+                            </small>
+                          )}
+                          {isNearBudget && (
+                            <small className="budget-near-warning">
+                              Já usaste {Math.round(percentage)}% deste limite.
                             </small>
                           )}
                         </div>
@@ -1738,15 +1773,126 @@ function Dashboard({
         </header>
 
         {paginaAtiva === "dashboard" && (
-          <section className="dashboard-card dashboard-welcome">
-            <p className="eyebrow">A TUA ÁREA FINANCEIRA</p>
-            <h2>
-              Olá{nomePerfil.trim() ? `, ${nomePerfil.trim()}` : ""}!
-            </h2>
-            <p>
-              Aqui está o teu resumo de {meses[mesSelecionado]} de {anoSelecionado}.
-            </p>
-          </section>
+          <>
+            <section className="dashboard-card dashboard-welcome">
+              <p className="eyebrow">A TUA ÁREA FINANCEIRA</p>
+              <h2>
+                Olá{nomePerfil.trim() ? `, ${nomePerfil.trim()}` : ""}!
+              </h2>
+              <p>
+                Aqui está o teu resumo de {meses[mesSelecionado]} de {anoSelecionado}.
+              </p>
+            </section>
+
+            <section
+              className="dashboard-card dashboard-budget-overview"
+              aria-labelledby="dashboard-budget-title"
+            >
+              <div className="card-heading">
+                <div>
+                  <h2 id="dashboard-budget-title">Orçamentos deste mês</h2>
+                  <p>
+                    Acompanha os limites de {meses[mesSelecionado]} de {anoSelecionado}.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="budget-overview-link"
+                  onClick={() => setPaginaAtiva("orcamentos")}
+                >
+                  Ver orçamentos
+                </button>
+              </div>
+
+              {aCarregarOrcamentos ? (
+                <p className="budget-summary-loading" role="status">
+                  A carregar os orçamentos...
+                </p>
+              ) : orcamentosAtivos.length === 0 ? (
+                <p className="dashboard-budget-empty">
+                  Ainda não definiste limites para este mês. Define um orçamento
+                  para acompanhar os teus gastos por categoria.
+                </p>
+              ) : (
+                <>
+                  <div className="dashboard-budget-totals">
+                    <div>
+                      <span>Total dos limites</span>
+                      <strong>{formatCurrency(totalLimitesOrcamento)}</strong>
+                    </div>
+                    <div>
+                      <span>Total gasto</span>
+                      <strong>{formatCurrency(total)}</strong>
+                    </div>
+                  </div>
+                  <div className="dashboard-budget-list">
+                    {orcamentosEmDestaque.map((orcamento) => {
+                      const estado = orcamento.isOverBudget
+                        ? `Ultrapassado em ${formatCurrency(
+                            orcamento.overage,
+                          )}`
+                        : orcamento.isNearBudget
+                          ? `${Math.round(orcamento.percentage)}% utilizado`
+                          : `${formatCurrency(
+                              orcamento.remaining,
+                            )} disponíveis`;
+
+                      return (
+                        <div
+                          className={`dashboard-budget-item ${
+                            orcamento.isOverBudget
+                              ? "is-over-budget"
+                              : orcamento.isNearBudget
+                                ? "is-near-budget"
+                                : ""
+                          }`}
+                          key={orcamento.nome}
+                        >
+                          <div className="dashboard-budget-item-heading">
+                            <span>
+                              {orcamento.icone} {orcamento.nome}
+                            </span>
+                            <strong>
+                              {formatCurrency(orcamento.gasto)}
+                              <small> / {formatCurrency(orcamento.limite)}</small>
+                            </strong>
+                          </div>
+                          <div
+                            className="budget-progress"
+                            role="progressbar"
+                            aria-label={`Gasto em ${orcamento.nome}`}
+                            aria-valuenow={Math.min(
+                              Math.round(orcamento.percentage),
+                              100,
+                            )}
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            aria-valuetext={`${Math.round(
+                              orcamento.percentage,
+                            )}% do limite`}
+                          >
+                            <div
+                              className="budget-progress-fill"
+                              style={{
+                                width: `${Math.min(orcamento.percentage, 100)}%`,
+                              }}
+                            />
+                          </div>
+                          <small className="dashboard-budget-status">{estado}</small>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {orcamentosAtivos.length > orcamentosEmDestaque.length && (
+                    <p className="dashboard-budget-more">
+                      A mostrar os {orcamentosEmDestaque.length} limites mais próximos
+                      do máximo.
+                    </p>
+                  )}
+                </>
+              )}
+            </section>
+          </>
         )}
 
         {renderConteudo()}
